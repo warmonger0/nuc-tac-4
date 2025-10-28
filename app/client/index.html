@@ -29,11 +29,135 @@
         <section id="results-section" class="results-section" style="display: none;">
           <div class="results-header">
             <h2>Query Results</h2>
-            <button id="toggle-results" class="toggle-button">Hide</button>
+            <div class="results-actions">
+              <button id="visualize-button" class="secondary-button" style="display: none;">📊 Visualize</button>
+              <button id="toggle-results" class="toggle-button">Hide</button>
+            </div>
           </div>
           <div id="sql-display" class="sql-display"></div>
           <div id="results-container" class="results-container"></div>
         </section>
+
+        <!-- Visualization Panel -->
+        <section id="visualization-panel" class="visualization-panel" style="display: none;">
+          <div class="viz-header">
+            <h2>Data Visualization</h2>
+            <div class="viz-actions">
+              <button id="toggle-view" class="secondary-button">Switch to Table</button>
+              <button id="close-viz" class="toggle-button">Close</button>
+            </div>
+          </div>
+
+          <div class="viz-controls">
+            <div class="chart-type-selector">
+              <button class="chart-type-btn" data-type="bar" title="Bar Chart">
+                <span class="chart-icon">📊</span>
+              </button>
+              <button class="chart-type-btn" data-type="line" title="Line Chart">
+                <span class="chart-icon">📈</span>
+              </button>
+              <button class="chart-type-btn" data-type="pie" title="Pie Chart">
+                <span class="chart-icon">🥧</span>
+              </button>
+              <button class="chart-type-btn" data-type="scatter" title="Scatter Plot">
+                <span class="chart-icon">⚫</span>
+              </button>
+              <button class="chart-type-btn" data-type="area" title="Area Chart">
+                <span class="chart-icon">📉</span>
+              </button>
+            </div>
+
+            <div class="viz-customization">
+              <button id="customize-btn" class="secondary-button">⚙️ Customize</button>
+              <button id="export-btn" class="secondary-button">💾 Export</button>
+            </div>
+          </div>
+
+          <div class="chart-container">
+            <canvas id="visualization-canvas" role="img" aria-label="Data visualization chart"></canvas>
+            <div id="chart-loading" class="chart-loading" style="display: none;">
+              <div class="spinner"></div>
+              <p>Generating visualization...</p>
+            </div>
+          </div>
+
+          <div id="chart-insights" class="chart-insights" style="display: none;">
+            <h3>💡 Insights</h3>
+            <p id="insights-text"></p>
+          </div>
+
+          <div id="data-warning" class="data-warning" style="display: none;">
+            <p></p>
+          </div>
+        </section>
+
+        <!-- Customization Modal -->
+        <div id="customization-modal" class="modal" style="display: none;">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h2>Customize Chart</h2>
+              <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label for="chart-title">Chart Title:</label>
+                <input type="text" id="chart-title" placeholder="Enter chart title">
+              </div>
+              <div class="form-group">
+                <label for="x-axis-label">X-Axis Label:</label>
+                <input type="text" id="x-axis-label" placeholder="Enter X-axis label">
+              </div>
+              <div class="form-group">
+                <label for="y-axis-label">Y-Axis Label:</label>
+                <input type="text" id="y-axis-label" placeholder="Enter Y-axis label">
+              </div>
+              <div class="form-group">
+                <label>
+                  <input type="checkbox" id="show-legend" checked>
+                  Show Legend
+                </label>
+              </div>
+              <div class="form-group">
+                <label>
+                  <input type="checkbox" id="show-grid" checked>
+                  Show Grid Lines
+                </label>
+              </div>
+              <div class="modal-actions">
+                <button id="apply-customization" class="primary-button">Apply</button>
+                <button id="reset-customization" class="secondary-button">Reset to Default</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Export Modal -->
+        <div id="export-modal" class="modal" style="display: none;">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h2>Export Visualization</h2>
+              <button class="close-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+              <div class="export-options">
+                <button class="export-option" data-format="png">
+                  <span class="export-icon">🖼️</span>
+                  <span class="export-text">
+                    <strong>PNG Image</strong>
+                    <small>Best for presentations and documents</small>
+                  </span>
+                </button>
+                <button class="export-option" data-format="csv">
+                  <span class="export-icon">📄</span>
+                  <span class="export-text">
+                    <strong>CSV Data</strong>
+                    <small>Export raw chart data</small>
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <!-- Current Tables Section -->
         <section id="tables-section" class="tables-section">

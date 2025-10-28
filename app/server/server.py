@@ -33,7 +33,9 @@ from core.data_models import (
     InsightsResponse,
     HealthCheckResponse,
     TableSchema,
-    ColumnInfo
+    ColumnInfo,
+    VisualizationRequest,
+    VisualizationResponse
 )
 
 # Import core modules (to be implemented)
@@ -47,6 +49,7 @@ from core.sql_security import (
     check_table_exists,
     SQLSecurityError
 )
+from core.visualization_analyzer import analyze_and_suggest
 
 app = FastAPI(
     title="Natural Language SQL Interface",
@@ -114,24 +117,36 @@ async def process_natural_language_query(request: QueryRequest) -> QueryResponse
     try:
         # Get database schema
         schema_info = get_database_schema()
-        
+
         # Generate SQL using routing logic
         sql = generate_sql(request, schema_info)
-        
+
         # Execute SQL query
         start_time = datetime.now()
         result = execute_sql_safely(sql)
         execution_time = (datetime.now() - start_time).total_seconds() * 1000
-        
+
         if result['error']:
             raise Exception(result['error'])
-        
+
+        # Generate visualization suggestions if requested
+        viz_suggestions = None
+        if request.include_visualization_hints and result['results'] and result['columns']:
+            try:
+                viz_response = analyze_and_suggest(result['results'], result['columns'])
+                if viz_response.suggestions:
+                    # Convert suggestions to dicts for JSON serialization
+                    viz_suggestions = [s.model_dump() for s in viz_response.suggestions]
+            except Exception as viz_error:
+                logger.warning(f"[WARNING] Visualization suggestion failed, continuing: {viz_error}")
+
         response = QueryResponse(
             sql=sql,
             results=result['results'],
             columns=result['columns'],
             row_count=len(result['results']),
-            execution_time_ms=execution_time
+            execution_time_ms=execution_time,
+            visualization_suggestions=viz_suggestions
         )
         logger.info(f"[SUCCESS] Query processed: SQL={sql}, rows={len(result['results'])}, time={execution_time}ms")
         return response
@@ -205,6 +220,25 @@ async def generate_insights_endpoint(request: InsightsRequest) -> InsightsRespon
             table_name=request.table_name,
             insights=[],
             generated_at=datetime.now(),
+            error=str(e)
+        )
+
+@app.post("/api/visualizations/suggest", response_model=VisualizationResponse)
+async def suggest_visualizations(request: VisualizationRequest) -> VisualizationResponse:
+    """Analyze query results and suggest appropriate visualizations"""
+    try:
+        # Analyze data and generate suggestions
+        response = analyze_and_suggest(request.results, request.columns)
+
+        logger.info(f"[SUCCESS] Visualization suggestions: {len(response.suggestions)} suggestions for {len(request.results)} rows")
+        return response
+    except Exception as e:
+        logger.error(f"[ERROR] Visualization suggestion failed: {str(e)}")
+        logger.error(f"[ERROR] Full traceback:\n{traceback.format_exc()}")
+        return VisualizationResponse(
+            suggestions=[],
+            primary_suggestion=None,
+            data_summary={},
             error=str(e)
         )
 
