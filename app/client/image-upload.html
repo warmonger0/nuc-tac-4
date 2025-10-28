@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Image Upload</title>
+  </head>
+  <body>
+    <div id="app">
+      <div class="container">
+        <!-- Navigation Bar -->
+        <nav class="navbar" role="navigation" aria-label="Main navigation">
+          <div class="navbar-buttons">
+            <a href="/index.html" class="nav-button" aria-label="Navigate to Natural Language SQL Interface">NL SQL</a>
+            <a href="/image-upload.html" class="nav-button nav-button-active" aria-label="Navigate to Image Upload" aria-current="page">IMAGE UPLOAD</a>
+          </div>
+        </nav>
+
+        <h1>Image Upload</h1>
+
+        <!-- Folder Management Section -->
+        <section class="query-section">
+          <h3>Manage Folders</h3>
+          <div class="folder-controls">
+            <select id="folder-select" class="folder-select" aria-label="Select folder">
+              <option value="">Select a folder...</option>
+            </select>
+            <button id="create-folder-button" class="secondary-button">New Folder</button>
+            <button id="rename-folder-button" class="secondary-button" disabled>Rename</button>
+            <button id="delete-folder-button" class="secondary-button" disabled>Delete</button>
+          </div>
+        </section>
+
+        <!-- Upload Section -->
+        <section class="query-section">
+          <h3>Upload Images</h3>
+          <div id="drop-zone" class="drop-zone">
+            <p>Drag and drop images here</p>
+            <p class="accepted-formats">Accepted formats: PNG, JPG, JPEG, GIF, WebP, BMP</p>
+            <input type="file" id="file-input" accept=".png,.jpg,.jpeg,.gif,.webp,.bmp" multiple style="display: none;">
+            <button id="browse-button" class="secondary-button">Browse Files</button>
+          </div>
+          <div id="upload-progress" class="upload-progress" style="display: none;">
+            <div class="progress-bar">
+              <div id="progress-fill" class="progress-fill"></div>
+            </div>
+            <p id="upload-status">Uploading...</p>
+          </div>
+        </section>
+
+        <!-- Image Gallery Section -->
+        <section class="tables-section">
+          <h3>Image Gallery</h3>
+          <div id="image-gallery" class="image-gallery">
+            <p class="no-tables">No images uploaded yet. Upload images to get started.</p>
+          </div>
+        </section>
+
+        <!-- Folder Modals -->
+        <div id="folder-modal" class="modal" style="display: none;">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h2 id="folder-modal-title">Create Folder</h2>
+              <button class="close-modal" id="close-folder-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+              <input type="text" id="folder-name-input" class="folder-input" placeholder="Enter folder name" />
+              <div style="display: flex; gap: 1rem; margin-top: 1rem; justify-content: flex-end;">
+                <button id="cancel-folder-button" class="secondary-button">Cancel</button>
+                <button id="confirm-folder-button" class="primary-button">Confirm</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/image-upload.ts"></script>
+  </body>
+</html>
