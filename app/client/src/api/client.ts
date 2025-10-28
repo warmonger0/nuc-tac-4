@@ -75,5 +75,16 @@ export const api = {
   // Health check
   async healthCheck(): Promise<HealthCheckResponse> {
     return apiRequest<HealthCheckResponse>('/health');
+  },
+
+  // Get visualization suggestions
+  async suggestVisualizations(request: VisualizationRequest): Promise<VisualizationResponse> {
+    return apiRequest<VisualizationResponse>('/visualizations/suggest', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify(request)
+    });
   }
 };

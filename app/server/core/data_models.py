@@ -1,6 +1,7 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any, Literal
 from datetime import datetime
+from enum import Enum
 
 # File Upload Models
 class FileUploadRequest(BaseModel):
@@ -19,6 +20,7 @@ class QueryRequest(BaseModel):
     query: str = Field(..., description="Natural language query")
     llm_provider: Literal["openai", "anthropic"] = "openai"
     table_name: Optional[str] = None  # If querying specific table
+    include_visualization_hints: bool = True
 
 class QueryResponse(BaseModel):
     sql: str
@@ -27,6 +29,7 @@ class QueryResponse(BaseModel):
     row_count: int
     execution_time_ms: float
     error: Optional[str] = None
+    visualization_suggestions: Optional[List[Dict[str, Any]]] = None
 
 # Database Schema Models
 class ColumnInfo(BaseModel):
@@ -80,3 +83,38 @@ class HealthCheckResponse(BaseModel):
     tables_count: int
     version: str = "1.0.0"
     uptime_seconds: float
+
+# Visualization Models
+class ChartType(str, Enum):
+    BAR = "bar"
+    LINE = "line"
+    PIE = "pie"
+    SCATTER = "scatter"
+    AREA = "area"
+
+class ColumnAnalysis(BaseModel):
+    name: str
+    data_type: str
+    is_numeric: bool
+    is_temporal: bool
+    is_categorical: bool
+    unique_count: int
+    sample_values: List[Any]
+
+class VisualizationSuggestion(BaseModel):
+    chart_type: ChartType
+    x_axis_column: Optional[str] = None
+    y_axis_columns: List[str]
+    title: str
+    description: str
+    confidence_score: float = Field(..., ge=0.0, le=1.0)
+
+class VisualizationRequest(BaseModel):
+    results: List[Dict[str, Any]]
+    columns: List[str]
+
+class VisualizationResponse(BaseModel):
+    suggestions: List[VisualizationSuggestion]
+    primary_suggestion: Optional[VisualizationSuggestion] = None
+    data_summary: Dict[str, Any]
+    error: Optional[str] = None

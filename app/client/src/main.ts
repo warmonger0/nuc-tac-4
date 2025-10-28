@@ -1,15 +1,21 @@
 import './style.css'
 import { api } from './api/client'
+import { ChartManager, isVisualizationSuitable, trackVisualizationUsage } from './visualization'
+import type { ChartCustomization } from './visualization'
 
 // Global state
 let currentResults: QueryResponse | null = null;
-let availableTables: TableSchema[] = [];
+let chartManager: ChartManager | null = null;
+let currentSuggestions: VisualizationSuggestion[] = [];
+let currentSuggestion: VisualizationSuggestion | null = null;
+let currentCustomization: ChartCustomization = {};
 
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
   initializeQueryInput();
   initializeFileUpload();
   initializeModal();
+  initializeVisualization();
   loadDatabaseSchema();
 });
 
@@ -110,7 +116,6 @@ async function loadDatabaseSchema() {
   try {
     const response = await api.getSchema();
     if (!response.error) {
-      availableTables = response.tables;
       displayTables(response.tables);
     }
   } catch (error) {
@@ -121,13 +126,14 @@ async function loadDatabaseSchema() {
 // Display query results
 function displayResults(response: QueryResponse, query: string) {
   currentResults = response;
-  
+
   const resultsSection = document.getElementById('results-section') as HTMLElement;
   const sqlDisplay = document.getElementById('sql-display') as HTMLDivElement;
   const resultsContainer = document.getElementById('results-container') as HTMLDivElement;
-  
+  const visualizeButton = document.getElementById('visualize-button') as HTMLButtonElement;
+
   resultsSection.style.display = 'block';
-  
+
   // Display natural language query and SQL
   sqlDisplay.innerHTML = `
     <div class="query-display">
@@ -137,18 +143,32 @@ function displayResults(response: QueryResponse, query: string) {
       <strong>SQL:</strong> <code>${response.sql}</code>
     </div>
   `;
-  
+
   // Display results table
   if (response.error) {
     resultsContainer.innerHTML = `<div class="error-message">${response.error}</div>`;
+    visualizeButton.style.display = 'none';
   } else if (response.results.length === 0) {
     resultsContainer.innerHTML = '<p>No results found.</p>';
+    visualizeButton.style.display = 'none';
   } else {
     const table = createResultsTable(response.results, response.columns);
     resultsContainer.innerHTML = '';
     resultsContainer.appendChild(table);
+
+    // Show visualize button if data is suitable
+    if (isVisualizationSuitable(response.results, response.columns)) {
+      visualizeButton.style.display = 'inline-block';
+
+      // Store suggestions if available
+      if (response.visualization_suggestions && response.visualization_suggestions.length > 0) {
+        currentSuggestions = response.visualization_suggestions;
+      }
+    } else {
+      visualizeButton.style.display = 'none';
+    }
   }
-  
+
   // Initialize toggle button
   const toggleButton = document.getElementById('toggle-results') as HTMLButtonElement;
   toggleButton.addEventListener('click', () => {
@@ -399,17 +419,369 @@ async function loadSampleData(sampleType: string) {
   try {
     const filename = sampleType === 'users' ? 'users.json' : 'products.csv';
     const response = await fetch(`/sample-data/${filename}`);
-    
+
     if (!response.ok) {
       throw new Error('Failed to load sample data');
     }
-    
+
     const blob = await response.blob();
     const file = new File([blob], filename, { type: blob.type });
-    
+
     // Upload the file
     await handleFileUpload(file);
   } catch (error) {
     displayError(error instanceof Error ? error.message : 'Failed to load sample data');
   }
+}
+
+// Initialize visualization functionality
+function initializeVisualization() {
+  // Initialize ChartManager
+  chartManager = new ChartManager('visualization-canvas');
+
+  // Visualize button click
+  const visualizeButton = document.getElementById('visualize-button') as HTMLButtonElement;
+  visualizeButton.addEventListener('click', showVisualization);
+
+  // Close visualization button
+  const closeVizButton = document.getElementById('close-viz') as HTMLButtonElement;
+  closeVizButton.addEventListener('click', hideVisualization);
+
+  // Toggle view button
+  const toggleViewButton = document.getElementById('toggle-view') as HTMLButtonElement;
+  toggleViewButton.addEventListener('click', toggleView);
+
+  // Chart type selector buttons
+  const chartTypeButtons = document.querySelectorAll('.chart-type-btn');
+  chartTypeButtons.forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      const chartType = (e.currentTarget as HTMLElement).dataset.type as ChartType;
+      switchChartType(chartType);
+    });
+  });
+
+  // Customize button
+  const customizeBtn = document.getElementById('customize-btn') as HTMLButtonElement;
+  customizeBtn.addEventListener('click', openCustomizationModal);
+
+  // Export button
+  const exportBtn = document.getElementById('export-btn') as HTMLButtonElement;
+  exportBtn.addEventListener('click', openExportModal);
+
+  // Customization modal
+  initializeCustomizationModal();
+
+  // Export modal
+  initializeExportModal();
+}
+
+// Show visualization
+async function showVisualization() {
+  if (!currentResults || !currentResults.results || currentResults.results.length === 0) {
+    return;
+  }
+
+  const vizPanel = document.getElementById('visualization-panel') as HTMLElement;
+  const resultsSection = document.getElementById('results-section') as HTMLElement;
+
+  // Show visualization panel
+  vizPanel.style.display = 'block';
+  resultsSection.style.display = 'none';
+
+  // Show loading
+  const chartLoading = document.getElementById('chart-loading') as HTMLElement;
+  chartLoading.style.display = 'block';
+
+  try {
+    // Get suggestions if not already available
+    if (currentSuggestions.length === 0) {
+      const vizResponse = await api.suggestVisualizations({
+        results: currentResults.results,
+        columns: currentResults.columns
+      });
+
+      if (vizResponse.error) {
+        throw new Error(vizResponse.error);
+      }
+
+      currentSuggestions = vizResponse.suggestions;
+    }
+
+    if (currentSuggestions.length === 0) {
+      throw new Error('No visualization suggestions available for this data');
+    }
+
+    // Use primary suggestion
+    currentSuggestion = currentSuggestions[0];
+
+    // Create chart
+    if (chartManager) {
+      chartManager.createChart(
+        currentSuggestion,
+        currentResults.results,
+        currentResults.columns,
+        currentCustomization
+      );
+
+      // Track usage
+      trackVisualizationUsage(currentSuggestion.chart_type, currentResults.results.length);
+
+      // Show data warning if sampled
+      if (currentResults.results.length > 1000) {
+        const dataWarning = document.getElementById('data-warning') as HTMLElement;
+        dataWarning.style.display = 'block';
+        dataWarning.querySelector('p')!.textContent =
+          `Showing visualization of ${Math.min(1000, currentResults.results.length)} of ${currentResults.results.length} data points`;
+      }
+
+      // Highlight active chart type
+      updateActiveChartType(currentSuggestion.chart_type);
+    }
+  } catch (error) {
+    console.error('Visualization error:', error);
+    alert(error instanceof Error ? error.message : 'Failed to create visualization');
+    hideVisualization();
+  } finally {
+    chartLoading.style.display = 'none';
+  }
+}
+
+// Hide visualization
+function hideVisualization() {
+  const vizPanel = document.getElementById('visualization-panel') as HTMLElement;
+  const resultsSection = document.getElementById('results-section') as HTMLElement;
+
+  vizPanel.style.display = 'none';
+  resultsSection.style.display = 'block';
+
+  // Reset data warning
+  const dataWarning = document.getElementById('data-warning') as HTMLElement;
+  dataWarning.style.display = 'none';
+}
+
+// Toggle between table and chart view
+function toggleView() {
+  const vizPanel = document.getElementById('visualization-panel') as HTMLElement;
+  const resultsSection = document.getElementById('results-section') as HTMLElement;
+  const toggleViewButton = document.getElementById('toggle-view') as HTMLButtonElement;
+
+  if (resultsSection.style.display === 'none') {
+    // Switch to table
+    resultsSection.style.display = 'block';
+    vizPanel.style.display = 'none';
+    toggleViewButton.textContent = 'Switch to Chart';
+  } else {
+    // Switch to chart
+    resultsSection.style.display = 'none';
+    vizPanel.style.display = 'block';
+    toggleViewButton.textContent = 'Switch to Table';
+  }
+}
+
+// Switch chart type
+function switchChartType(chartType: ChartType) {
+  if (!currentResults || !chartManager) return;
+
+  // Find matching suggestion or create a basic one
+  let suggestion = currentSuggestions.find(s => s.chart_type === chartType);
+
+  if (!suggestion) {
+    // Create a basic suggestion
+    suggestion = {
+      chart_type: chartType,
+      x_axis_column: currentResults.columns[0],
+      y_axis_columns: currentResults.columns.slice(1, 2),
+      title: `${chartType.charAt(0).toUpperCase() + chartType.slice(1)} Chart`,
+      description: '',
+      confidence_score: 0.5
+    };
+  }
+
+  currentSuggestion = suggestion;
+
+  // Update chart
+  chartManager.createChart(
+    suggestion,
+    currentResults.results,
+    currentResults.columns,
+    currentCustomization
+  );
+
+  // Update active button
+  updateActiveChartType(chartType);
+
+  // Track usage
+  trackVisualizationUsage(chartType, currentResults.results.length);
+}
+
+// Update active chart type button
+function updateActiveChartType(chartType: ChartType) {
+  const chartTypeButtons = document.querySelectorAll('.chart-type-btn');
+  chartTypeButtons.forEach(btn => {
+    if ((btn as HTMLElement).dataset.type === chartType) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+}
+
+// Initialize customization modal
+function initializeCustomizationModal() {
+  const modal = document.getElementById('customization-modal') as HTMLElement;
+  const closeButton = modal.querySelector('.close-modal') as HTMLButtonElement;
+  const applyButton = document.getElementById('apply-customization') as HTMLButtonElement;
+  const resetButton = document.getElementById('reset-customization') as HTMLButtonElement;
+
+  // Close modal
+  closeButton.addEventListener('click', () => {
+    modal.style.display = 'none';
+  });
+
+  // Apply customization
+  applyButton.addEventListener('click', () => {
+    const title = (document.getElementById('chart-title') as HTMLInputElement).value;
+    const xAxisLabel = (document.getElementById('x-axis-label') as HTMLInputElement).value;
+    const yAxisLabel = (document.getElementById('y-axis-label') as HTMLInputElement).value;
+    const showLegend = (document.getElementById('show-legend') as HTMLInputElement).checked;
+    const showGrid = (document.getElementById('show-grid') as HTMLInputElement).checked;
+
+    currentCustomization = {
+      title: title || undefined,
+      xAxisLabel: xAxisLabel || undefined,
+      yAxisLabel: yAxisLabel || undefined,
+      showLegend,
+      showGrid
+    };
+
+    // Update chart
+    if (chartManager && currentSuggestion && currentResults) {
+      chartManager.updateChart(currentSuggestion, currentCustomization);
+    }
+
+    modal.style.display = 'none';
+  });
+
+  // Reset customization
+  resetButton.addEventListener('click', () => {
+    currentCustomization = {};
+
+    // Clear form
+    (document.getElementById('chart-title') as HTMLInputElement).value = '';
+    (document.getElementById('x-axis-label') as HTMLInputElement).value = '';
+    (document.getElementById('y-axis-label') as HTMLInputElement).value = '';
+    (document.getElementById('show-legend') as HTMLInputElement).checked = true;
+    (document.getElementById('show-grid') as HTMLInputElement).checked = true;
+
+    // Update chart
+    if (chartManager && currentSuggestion && currentResults) {
+      chartManager.createChart(
+        currentSuggestion,
+        currentResults.results,
+        currentResults.columns,
+        currentCustomization
+      );
+    }
+
+    modal.style.display = 'none';
+  });
+
+  // Close on background click
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      modal.style.display = 'none';
+    }
+  });
+}
+
+// Open customization modal
+function openCustomizationModal() {
+  const modal = document.getElementById('customization-modal') as HTMLElement;
+
+  // Pre-fill with current values
+  if (currentSuggestion) {
+    (document.getElementById('chart-title') as HTMLInputElement).value =
+      currentCustomization.title || currentSuggestion.title;
+  }
+
+  (document.getElementById('x-axis-label') as HTMLInputElement).value =
+    currentCustomization.xAxisLabel || '';
+  (document.getElementById('y-axis-label') as HTMLInputElement).value =
+    currentCustomization.yAxisLabel || '';
+  (document.getElementById('show-legend') as HTMLInputElement).checked =
+    currentCustomization.showLegend !== undefined ? currentCustomization.showLegend : true;
+  (document.getElementById('show-grid') as HTMLInputElement).checked =
+    currentCustomization.showGrid !== undefined ? currentCustomization.showGrid : true;
+
+  modal.style.display = 'flex';
+}
+
+// Initialize export modal
+function initializeExportModal() {
+  const modal = document.getElementById('export-modal') as HTMLElement;
+  const closeButton = modal.querySelector('.close-modal') as HTMLButtonElement;
+  const exportOptions = modal.querySelectorAll('.export-option');
+
+  // Close modal
+  closeButton.addEventListener('click', () => {
+    modal.style.display = 'none';
+  });
+
+  // Export options
+  exportOptions.forEach(option => {
+    option.addEventListener('click', () => {
+      const format = (option as HTMLElement).dataset.format as 'png' | 'csv';
+      handleExport(format);
+      modal.style.display = 'none';
+    });
+  });
+
+  // Close on background click
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      modal.style.display = 'none';
+    }
+  });
+}
+
+// Open export modal
+function openExportModal() {
+  const modal = document.getElementById('export-modal') as HTMLElement;
+  modal.style.display = 'flex';
+}
+
+// Handle export
+function handleExport(format: 'png' | 'csv') {
+  if (!chartManager) return;
+
+  const timestamp = new Date().toISOString().slice(0, 10);
+  const filename = `chart-${timestamp}`;
+
+  if (format === 'png') {
+    chartManager.exportPNG(`${filename}.png`);
+  } else if (format === 'csv') {
+    chartManager.exportCSV(`${filename}.csv`);
+  }
+
+  // Show success message
+  const successDiv = document.createElement('div');
+  successDiv.className = 'success-message';
+  successDiv.textContent = `Chart exported as ${format.toUpperCase()} successfully!`;
+  successDiv.style.cssText = `
+    position: fixed;
+    top: 2rem;
+    right: 2rem;
+    background: rgba(40, 167, 69, 0.9);
+    color: white;
+    padding: 1rem 1.5rem;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    z-index: 10000;
+  `;
+
+  document.body.appendChild(successDiv);
+
+  setTimeout(() => {
+    successDiv.remove();
+  }, 3000);
 }
