@@ -1,0 +1,5 @@
+{"id": 1, "name": "Valid Record", "status": "ok"}
+{invalid json here}
+{"id": 2, "name": "Another Valid", "status": "ok"}
+["not", "an", "object"]
+{"id": 3, "name": "Last Valid", "status": "ok"}

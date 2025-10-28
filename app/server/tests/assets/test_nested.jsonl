@@ -1,0 +1,4 @@
+{"id": 1, "name": "Alice Smith", "address": {"city": "New York", "state": "NY", "zip": "10001"}}
+{"id": 2, "name": "Bob Johnson", "address": {"city": "Los Angeles", "state": "CA", "zip": "90001"}}
+{"id": 3, "name": "Charlie Brown", "address": {"city": "Chicago", "state": "IL", "zip": "60601"}}
+{"id": 4, "name": "Diana Prince", "address": {"city": "Houston", "state": "TX", "zip": "77001"}}

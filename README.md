@@ -5,7 +5,8 @@ A web application that converts natural language queries to SQL using AI, built 
 ## Features
 
 - 🗣️ Natural language to SQL conversion using OpenAI or Anthropic
-- 📁 Drag-and-drop file upload (.csv and .json)
+- 📁 Drag-and-drop file upload (.csv, .json, and .jsonl)
+- 🔄 Automatic flattening of nested JSON structures
 - 📊 Interactive table results display
 - 🔒 SQL injection protection
 - ⚡ Fast development with Vite and uv
@@ -83,12 +84,29 @@ npm run dev
 
 1. **Upload Data**: Click "Upload Data" to open the modal
    - Use sample data buttons for quick testing
-   - Or drag and drop your own .csv or .json files
+   - Or drag and drop your own .csv, .json, or .jsonl files
    - Uploading a file with the same name will overwrite the existing table
 2. **Query Your Data**: Type a natural language query like "Show me all users who signed up last week"
    - Press `Cmd+Enter` (Mac) or `Ctrl+Enter` (Windows/Linux) to run the query
 3. **View Results**: See the generated SQL and results in a table format
 4. **Manage Tables**: Click the × button on any table to remove it
+
+### Supported File Formats
+
+- **CSV**: Comma-separated values with headers
+- **JSON**: Array of objects (e.g., `[{"id": 1, "name": "Alice"}, ...]`)
+- **JSONL**: Newline-delimited JSON (each line is a separate JSON object)
+
+### Nested JSON Flattening
+
+When uploading JSON or JSONL files with nested structures, fields are automatically flattened using these conventions:
+
+- **Nested objects**: Separated with double underscore (`__`)
+  - Example: `{"user": {"name": "Alice"}}` becomes column `user__name`
+- **Arrays**: Indexed with underscore and number (`_0`, `_1`, etc.)
+  - Example: `{"tags": ["a", "b"]}` becomes columns `tags_0`, `tags_1`
+- **Combined**: Deep nesting combines both conventions
+  - Example: `{"items": [{"name": "Laptop"}]}` becomes column `items_0__name`
 
 ## Development
 
@@ -135,7 +153,7 @@ npm run preview            # Preview production build
 
 ## API Endpoints
 
-- `POST /api/upload` - Upload CSV/JSON file
+- `POST /api/upload` - Upload CSV/JSON/JSONL file
 - `POST /api/query` - Process natural language query
 - `GET /api/schema` - Get database schema
 - `POST /api/insights` - Generate column insights
@@ -192,7 +210,7 @@ uv run pytest tests/test_sql_injection.py -v
 ### Additional Security Features
 
 - CORS configured for local development only
-- File upload validation (CSV and JSON only)
+- File upload validation (CSV, JSON, and JSONL only)
 - Comprehensive error logging without exposing sensitive data
 - Database operations are isolated with proper connection handling
 

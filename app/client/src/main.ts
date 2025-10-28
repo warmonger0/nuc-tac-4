@@ -1,10 +1,6 @@
 import './style.css'
 import { api } from './api/client'
 
-// Global state
-let currentResults: QueryResponse | null = null;
-let availableTables: TableSchema[] = [];
-
 // Initialize app
 document.addEventListener('DOMContentLoaded', () => {
   initializeQueryInput();
@@ -110,7 +106,6 @@ async function loadDatabaseSchema() {
   try {
     const response = await api.getSchema();
     if (!response.error) {
-      availableTables = response.tables;
       displayTables(response.tables);
     }
   } catch (error) {
@@ -120,8 +115,6 @@ async function loadDatabaseSchema() {
 
 // Display query results
 function displayResults(response: QueryResponse, query: string) {
-  currentResults = response;
-  
   const resultsSection = document.getElementById('results-section') as HTMLElement;
   const sqlDisplay = document.getElementById('sql-display') as HTMLDivElement;
   const resultsContainer = document.getElementById('results-container') as HTMLDivElement;
