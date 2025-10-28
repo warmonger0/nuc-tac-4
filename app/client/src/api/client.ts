@@ -75,5 +75,66 @@ export const api = {
   // Health check
   async healthCheck(): Promise<HealthCheckResponse> {
     return apiRequest<HealthCheckResponse>('/health');
+  },
+
+  // Image upload methods
+  async uploadImages(files: FileList, folder: string = 'default'): Promise<ImageUploadResponse[]> {
+    const formData = new FormData();
+
+    // Append all files
+    for (let i = 0; i < files.length; i++) {
+      formData.append('files', files[i]);
+    }
+
+    return apiRequest<ImageUploadResponse[]>(`/images/upload?folder=${encodeURIComponent(folder)}`, {
+      method: 'POST',
+      body: formData
+    });
+  },
+
+  async getImages(folder?: string): Promise<ImageListResponse> {
+    const endpoint = folder ? `/images?folder=${encodeURIComponent(folder)}` : '/images';
+    return apiRequest<ImageListResponse>(endpoint);
+  },
+
+  getImageUrl(imageId: string): string {
+    return `${API_BASE_URL}/images/${imageId}`;
+  },
+
+  async deleteImage(imageId: string): Promise<{ message: string }> {
+    return apiRequest<{ message: string }>(`/images/${imageId}`, {
+      method: 'DELETE'
+    });
+  },
+
+  // Folder management methods
+  async getFolders(): Promise<FolderResponse> {
+    return apiRequest<FolderResponse>('/folders');
+  },
+
+  async createFolder(folderName: string): Promise<FolderOperationResponse> {
+    return apiRequest<FolderOperationResponse>('/folders', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ folder_name: folderName })
+    });
+  },
+
+  async renameFolder(oldName: string, newName: string): Promise<FolderOperationResponse> {
+    return apiRequest<FolderOperationResponse>(`/folders/${encodeURIComponent(oldName)}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ old_name: oldName, new_name: newName })
+    });
+  },
+
+  async deleteFolder(folderName: string): Promise<FolderOperationResponse> {
+    return apiRequest<FolderOperationResponse>(`/folders/${encodeURIComponent(folderName)}`, {
+      method: 'DELETE'
+    });
   }
 };

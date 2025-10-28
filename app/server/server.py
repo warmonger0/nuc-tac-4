@@ -33,7 +33,13 @@ from core.data_models import (
     InsightsResponse,
     HealthCheckResponse,
     TableSchema,
-    ColumnInfo
+    ColumnInfo,
+    ImageUploadResponse,
+    ImageListResponse,
+    FolderRequest,
+    FolderRenameRequest,
+    FolderResponse,
+    FolderOperationResponse
 )
 
 # Import core modules (to be implemented)
@@ -47,6 +53,25 @@ from core.sql_security import (
     check_table_exists,
     SQLSecurityError
 )
+from core.image_processor import (
+    initialize_image_database,
+    validate_image_format,
+    save_image_to_disk,
+    save_image_metadata,
+    get_images,
+    get_image_by_id,
+    delete_image,
+    create_folder,
+    get_folders,
+    rename_folder,
+    delete_folder,
+    sanitize_folder_name
+)
+from core.data_models import ImageMetadata
+import uuid
+from pathlib import Path
+from fastapi.responses import FileResponse
+from typing import List
 
 app = FastAPI(
     title="Natural Language SQL Interface",
@@ -275,6 +300,278 @@ async def delete_table(table_name: str):
         logger.error(f"[ERROR] Table deletion failed: {str(e)}")
         logger.error(f"[ERROR] Full traceback:\n{traceback.format_exc()}")
         raise HTTPException(500, f"Error deleting table: {str(e)}")
+
+# ============================================
+# Image Upload Endpoints
+# ============================================
+
+@app.on_event("startup")
+async def startup_event():
+    """Initialize image database on startup"""
+    try:
+        conn = sqlite3.connect("db/database.db")
+        initialize_image_database(conn)
+        conn.close()
+        logger.info("[SUCCESS] Image database initialized")
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to initialize image database: {str(e)}")
+
+@app.post("/api/images/upload", response_model=List[ImageUploadResponse])
+async def upload_images(
+    files: List[UploadFile] = File(...),
+    folder: str = "default"
+) -> List[ImageUploadResponse]:
+    """Upload multiple images to a folder"""
+    responses = []
+
+    for file in files:
+        try:
+            # Validate image format
+            if not validate_image_format(file.filename):
+                responses.append(ImageUploadResponse(
+                    image_id="",
+                    filename=file.filename,
+                    folder=folder,
+                    size=0,
+                    format="",
+                    url="",
+                    error=f"Unsupported file format. Supported formats: PNG, JPG, JPEG, GIF, WebP, BMP"
+                ))
+                continue
+
+            # Read file data
+            file_data = await file.read()
+            file_size = len(file_data)
+
+            # Sanitize folder name
+            folder_sanitized = sanitize_folder_name(folder)
+
+            # Save to disk
+            file_path = save_image_to_disk(file_data, folder_sanitized, file.filename)
+
+            # Generate image metadata
+            image_id = str(uuid.uuid4())
+            file_ext = Path(file.filename).suffix.lower().lstrip('.')
+
+            metadata = ImageMetadata(
+                image_id=image_id,
+                filename=file.filename,
+                folder=folder_sanitized,
+                size=file_size,
+                format=file_ext,
+                created_at=datetime.now(),
+                file_path=file_path
+            )
+
+            # Save metadata to database
+            conn = sqlite3.connect("db/database.db")
+            save_image_metadata(conn, metadata)
+            conn.close()
+
+            # Create response
+            responses.append(ImageUploadResponse(
+                image_id=image_id,
+                filename=file.filename,
+                folder=folder_sanitized,
+                size=file_size,
+                format=file_ext,
+                url=f"/api/images/{image_id}"
+            ))
+
+            logger.info(f"[SUCCESS] Image uploaded: {file.filename} to folder '{folder_sanitized}'")
+
+        except Exception as e:
+            logger.error(f"[ERROR] Image upload failed for {file.filename}: {str(e)}")
+            responses.append(ImageUploadResponse(
+                image_id="",
+                filename=file.filename,
+                folder=folder,
+                size=0,
+                format="",
+                url="",
+                error=str(e)
+            ))
+
+    return responses
+
+@app.get("/api/images", response_model=ImageListResponse)
+async def list_images(folder: Optional[str] = None) -> ImageListResponse:
+    """Get list of all images, optionally filtered by folder"""
+    try:
+        conn = sqlite3.connect("db/database.db")
+        images = get_images(conn, folder)
+        conn.close()
+
+        response = ImageListResponse(
+            images=images,
+            total_count=len(images)
+        )
+        logger.info(f"[SUCCESS] Images retrieved: {len(images)} images")
+        return response
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to retrieve images: {str(e)}")
+        logger.error(f"[ERROR] Full traceback:\n{traceback.format_exc()}")
+        return ImageListResponse(
+            images=[],
+            total_count=0,
+            error=str(e)
+        )
+
+@app.get("/api/images/{image_id}")
+async def get_image(image_id: str):
+    """Get a specific image file"""
+    try:
+        conn = sqlite3.connect("db/database.db")
+        image = get_image_by_id(conn, image_id)
+        conn.close()
+
+        if not image:
+            raise HTTPException(404, f"Image with ID '{image_id}' not found")
+
+        file_path = Path(image.file_path)
+        if not file_path.exists():
+            raise HTTPException(404, f"Image file not found on disk")
+
+        logger.info(f"[SUCCESS] Image retrieved: {image_id}")
+        return FileResponse(
+            path=str(file_path),
+            media_type=f"image/{image.format}",
+            filename=image.filename
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to retrieve image {image_id}: {str(e)}")
+        logger.error(f"[ERROR] Full traceback:\n{traceback.format_exc()}")
+        raise HTTPException(500, f"Error retrieving image: {str(e)}")
+
+@app.delete("/api/images/{image_id}")
+async def delete_image_endpoint(image_id: str):
+    """Delete an image"""
+    try:
+        conn = sqlite3.connect("db/database.db")
+        success = delete_image(conn, image_id)
+        conn.close()
+
+        if not success:
+            raise HTTPException(404, f"Image with ID '{image_id}' not found")
+
+        response = {"message": f"Image '{image_id}' deleted successfully"}
+        logger.info(f"[SUCCESS] Image deleted: {image_id}")
+        return response
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to delete image {image_id}: {str(e)}")
+        logger.error(f"[ERROR] Full traceback:\n{traceback.format_exc()}")
+        raise HTTPException(500, f"Error deleting image: {str(e)}")
+
+# ============================================
+# Folder Management Endpoints
+# ============================================
+
+@app.get("/api/folders", response_model=FolderResponse)
+async def list_folders() -> FolderResponse:
+    """Get list of all folders"""
+    try:
+        conn = sqlite3.connect("db/database.db")
+        folders = get_folders(conn)
+        conn.close()
+
+        response = FolderResponse(folders=folders)
+        logger.info(f"[SUCCESS] Folders retrieved: {len(folders)} folders")
+        return response
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to retrieve folders: {str(e)}")
+        logger.error(f"[ERROR] Full traceback:\n{traceback.format_exc()}")
+        return FolderResponse(
+            folders=[],
+            error=str(e)
+        )
+
+@app.post("/api/folders", response_model=FolderOperationResponse)
+async def create_folder_endpoint(request: FolderRequest) -> FolderOperationResponse:
+    """Create a new folder"""
+    try:
+        conn = sqlite3.connect("db/database.db")
+        success, message = create_folder(conn, request.folder_name)
+        conn.close()
+
+        if success:
+            logger.info(f"[SUCCESS] Folder created: {request.folder_name}")
+        else:
+            logger.warning(f"[WARNING] Folder creation failed: {message}")
+
+        return FolderOperationResponse(
+            success=success,
+            message=message,
+            error=None if success else message
+        )
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to create folder: {str(e)}")
+        logger.error(f"[ERROR] Full traceback:\n{traceback.format_exc()}")
+        return FolderOperationResponse(
+            success=False,
+            message="",
+            error=str(e)
+        )
+
+@app.put("/api/folders/{folder_name}", response_model=FolderOperationResponse)
+async def rename_folder_endpoint(
+    folder_name: str,
+    request: FolderRenameRequest
+) -> FolderOperationResponse:
+    """Rename a folder"""
+    try:
+        conn = sqlite3.connect("db/database.db")
+        success, message = rename_folder(conn, request.old_name, request.new_name)
+        conn.close()
+
+        if success:
+            logger.info(f"[SUCCESS] Folder renamed: {request.old_name} -> {request.new_name}")
+        else:
+            logger.warning(f"[WARNING] Folder rename failed: {message}")
+
+        return FolderOperationResponse(
+            success=success,
+            message=message,
+            error=None if success else message
+        )
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to rename folder: {str(e)}")
+        logger.error(f"[ERROR] Full traceback:\n{traceback.format_exc()}")
+        return FolderOperationResponse(
+            success=False,
+            message="",
+            error=str(e)
+        )
+
+@app.delete("/api/folders/{folder_name}", response_model=FolderOperationResponse)
+async def delete_folder_endpoint(folder_name: str) -> FolderOperationResponse:
+    """Delete a folder"""
+    try:
+        conn = sqlite3.connect("db/database.db")
+        success, message = delete_folder(conn, folder_name)
+        conn.close()
+
+        if success:
+            logger.info(f"[SUCCESS] Folder deleted: {folder_name}")
+        else:
+            logger.warning(f"[WARNING] Folder deletion failed: {message}")
+
+        return FolderOperationResponse(
+            success=success,
+            message=message,
+            error=None if success else message
+        )
+    except Exception as e:
+        logger.error(f"[ERROR] Failed to delete folder: {str(e)}")
+        logger.error(f"[ERROR] Full traceback:\n{traceback.format_exc()}")
+        return FolderOperationResponse(
+            success=False,
+            message="",
+            error=str(e)
+        )
 
 if __name__ == "__main__":
     import uvicorn
