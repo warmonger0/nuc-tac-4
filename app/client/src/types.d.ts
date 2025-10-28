@@ -78,3 +78,54 @@ interface HealthCheckResponse {
   version: string;
   uptime_seconds: number;
 }
+
+// Image Upload Types
+interface ImageUploadResponse {
+  image_id: number;
+  filename: string;
+  file_type: string;
+  file_size: number;
+  folder_name?: string;
+  thumbnail_url?: string;
+  error?: string;
+}
+
+interface ImageMetadata {
+  id: number;
+  filename: string;
+  original_name: string;
+  file_type: string;
+  file_size: number;
+  folder_id?: number;
+  folder_name?: string;
+  upload_date: string;
+}
+
+interface ImageListResponse {
+  images: ImageMetadata[];
+  total_count: number;
+  error?: string;
+}
+
+// Folder Management Types
+interface FolderCreateRequest {
+  folder_name: string;
+}
+
+interface FolderData {
+  id: number;
+  folder_name: string;
+  image_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface FolderListResponse {
+  folders: FolderData[];
+  error?: string;
+}
+
+interface FolderUpdateRequest {
+  folder_id: number;
+  new_folder_name: string;
+}

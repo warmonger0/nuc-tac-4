@@ -43,6 +43,56 @@
           </div>
         </section>
 
+        <!-- Image Upload Section -->
+        <section id="image-section" class="image-section">
+          <div class="section-header">
+            <h3>Image Gallery</h3>
+            <button id="toggle-image-upload" class="secondary-button">Upload Images</button>
+          </div>
+
+          <!-- Image Upload Panel -->
+          <div id="image-upload-panel" class="image-upload-panel" style="display: none;">
+            <div class="folder-controls">
+              <label for="folder-select">Folder:</label>
+              <select id="folder-select" class="folder-select">
+                <option value="">No Folder</option>
+              </select>
+              <button id="new-folder-button" class="icon-button" title="New Folder">+</button>
+              <button id="rename-folder-button" class="icon-button" title="Rename Folder">✎</button>
+              <button id="delete-folder-button" class="icon-button" title="Delete Folder">🗑</button>
+            </div>
+
+            <div class="file-type-indicator">
+              <span class="supported-label">Supported:</span>
+              <span class="file-type-badge png">PNG</span>
+              <span class="file-type-badge jpg">JPG</span>
+              <span class="file-type-badge jpeg">JPEG</span>
+              <span class="file-type-badge gif">GIF</span>
+              <span class="file-type-badge bmp">BMP</span>
+              <span class="file-type-badge webp">WebP</span>
+              <span class="size-limit">(Max 10MB)</span>
+            </div>
+
+            <div id="image-drop-zone" class="image-drop-zone">
+              <p>Drag and drop images here</p>
+              <input type="file" id="image-file-input" accept="image/png,image/jpeg,image/gif,image/bmp,image/webp" multiple style="display: none;">
+              <button id="browse-images-button" class="secondary-button">Browse Images</button>
+            </div>
+
+            <div id="upload-progress" class="upload-progress" style="display: none;">
+              <div class="progress-bar">
+                <div class="progress-fill"></div>
+              </div>
+              <p class="progress-text">Uploading...</p>
+            </div>
+          </div>
+
+          <!-- Image Gallery Display -->
+          <div id="image-gallery" class="image-gallery">
+            <p class="no-images">No images uploaded yet. Click "Upload Images" to get started.</p>
+          </div>
+        </section>
+
         <!-- Upload Modal -->
         <div id="upload-modal" class="modal" style="display: none;">
           <div class="modal-content">

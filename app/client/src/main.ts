@@ -1,5 +1,6 @@
 import './style.css'
 import { api } from './api/client'
+import { initializeImageUpload } from './imageUpload'
 
 // Global state
 let currentResults: QueryResponse | null = null;
@@ -10,6 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeQueryInput();
   initializeFileUpload();
   initializeModal();
+  initializeImageUpload();
   loadDatabaseSchema();
 });
 

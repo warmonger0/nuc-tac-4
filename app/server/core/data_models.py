@@ -80,3 +80,50 @@ class HealthCheckResponse(BaseModel):
     tables_count: int
     version: str = "1.0.0"
     uptime_seconds: float
+
+# Image Upload Models
+class ImageUploadRequest(BaseModel):
+    folder_id: Optional[int] = None
+
+class ImageUploadResponse(BaseModel):
+    image_id: int = 0
+    filename: str = ""
+    file_type: str = ""
+    file_size: int = 0
+    folder_name: Optional[str] = None
+    thumbnail_url: Optional[str] = None
+    error: Optional[str] = None
+
+class ImageMetadata(BaseModel):
+    id: int
+    filename: str
+    original_name: str
+    file_type: str
+    file_size: int
+    folder_id: Optional[int]
+    folder_name: Optional[str] = None
+    upload_date: datetime
+
+class ImageListResponse(BaseModel):
+    images: List[ImageMetadata]
+    total_count: int
+    error: Optional[str] = None
+
+# Folder Management Models
+class FolderCreateRequest(BaseModel):
+    folder_name: str = Field(..., min_length=1, max_length=255, pattern=r'^[a-zA-Z0-9_\s-]+$')
+
+class FolderData(BaseModel):
+    id: int
+    folder_name: str
+    image_count: int
+    created_at: datetime
+    updated_at: datetime
+
+class FolderListResponse(BaseModel):
+    folders: List[FolderData]
+    error: Optional[str] = None
+
+class FolderUpdateRequest(BaseModel):
+    folder_id: int
+    new_folder_name: str = Field(..., min_length=1, max_length=255, pattern=r'^[a-zA-Z0-9_\s-]+$')
