@@ -130,3 +130,33 @@ interface FolderOperationResponse {
   message: string;
   error?: string;
 }
+
+// Duplicate Detection Types
+interface DuplicateMatch {
+  image_id: string;
+  filename: string;
+  folder: string;
+  similarity: number; // 0.0 to 1.0
+  phash?: string;
+  match_type: "exact_filename" | "similar_content";
+}
+
+interface DuplicateCheckResponse {
+  is_duplicate: boolean;
+  matches: DuplicateMatch[];
+  error?: string;
+}
+
+// Folder Statistics Types
+interface FolderStats {
+  name: string;
+  image_count: number;
+  total_size: number; // in bytes
+  created_at: string;
+}
+
+interface FolderListResponse {
+  folders: FolderStats[];
+  total_folders: number;
+  error?: string;
+}

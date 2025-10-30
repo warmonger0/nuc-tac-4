@@ -4,6 +4,8 @@ import { api } from './api/client';
 // State management
 let currentFolder = 'default';
 let folderModalMode: 'create' | 'rename' = 'create';
+let selectedNavFolder: string | null = 'all';  // 'all' or folder name
+let folderStats: FolderStats[] = [];
 
 // DOM Elements
 const folderSelect = document.getElementById('folder-select') as HTMLSelectElement;
@@ -23,6 +25,16 @@ const closeFolderModal = document.getElementById('close-folder-modal') as HTMLBu
 const folderNameInput = document.getElementById('folder-name-input') as HTMLInputElement;
 const cancelFolderButton = document.getElementById('cancel-folder-button') as HTMLButtonElement;
 const confirmFolderButton = document.getElementById('confirm-folder-button') as HTMLButtonElement;
+
+// New DOM elements for folder navigation
+const folderList = document.getElementById('folder-list') as HTMLDivElement;
+const galleryTitle = document.getElementById('gallery-title') as HTMLHeadingElement;
+
+// Duplicate modal elements (for future implementation)
+const duplicateModal = document.getElementById('duplicate-modal') as HTMLDivElement;
+const closeDuplicateModal = document.getElementById('close-duplicate-modal') as HTMLButtonElement;
+const skipDuplicateButton = document.getElementById('skip-duplicate-button') as HTMLButtonElement;
+const uploadAnywayButton = document.getElementById('upload-anyway-button') as HTMLButtonElement;
 
 // Initialize the page
 async function init() {
@@ -112,6 +124,25 @@ function setupEventListeners() {
       handleFolderModalConfirm();
     }
   });
+
+  // Duplicate modal events
+  closeDuplicateModal?.addEventListener('click', () => {
+    hideDuplicateModal();
+  });
+
+  skipDuplicateButton?.addEventListener('click', () => {
+    hideDuplicateModal();
+  });
+
+  uploadAnywayButton?.addEventListener('click', () => {
+    proceedWithUpload();
+  });
+
+  duplicateModal?.addEventListener('click', (e) => {
+    if (e.target === duplicateModal) {
+      hideDuplicateModal();
+    }
+  });
 }
 
 // Load folders from API
@@ -124,23 +155,30 @@ async function loadFolders() {
       return;
     }
 
+    // Store folder stats
+    folderStats = response.folders;
+
     // Clear existing options except the first one
     folderSelect.innerHTML = '<option value="">Select a folder...</option>';
 
     // Add folders
     response.folders.forEach(folder => {
       const option = document.createElement('option');
-      option.value = folder;
-      option.textContent = folder;
+      option.value = folder.name;
+      option.textContent = folder.name;
       folderSelect.appendChild(option);
     });
 
     // Set default folder if available
-    if (response.folders.includes('default')) {
+    const defaultFolder = response.folders.find(f => f.name === 'default');
+    if (defaultFolder) {
       folderSelect.value = 'default';
       currentFolder = 'default';
       updateFolderButtons();
     }
+
+    // Render folder navigation
+    renderFolderNavigation();
   } catch (error) {
     showError('Failed to load folders: ' + (error as Error).message);
   }
@@ -314,9 +352,10 @@ async function handleFiles(files: FileList) {
 }
 
 // Load images from API
-async function loadImages() {
+async function loadImages(folder?: string) {
   try {
-    const response = await api.getImages(currentFolder || undefined);
+    const folderToLoad = folder !== undefined ? (folder || undefined) : (currentFolder || undefined);
+    const response = await api.getImages(folderToLoad);
 
     if (response.error) {
       showError('Failed to load images: ' + response.error);
@@ -505,6 +544,69 @@ function showSuccess(message: string) {
   setTimeout(() => {
     document.body.removeChild(toast);
   }, 3000);
+}
+
+// Folder navigation rendering
+function renderFolderNavigation() {
+  if (!folderList) return;
+
+  // Calculate total images across all folders
+  const totalImages = folderStats.reduce((sum, folder) => sum + folder.image_count, 0);
+
+  // Clear existing folder list (except "All Images")
+  folderList.innerHTML = `
+    <div class="folder-item ${selectedNavFolder === 'all' ? 'folder-item-active' : ''}" data-folder="all">
+      <span class="folder-name">All Images</span>
+      <span class="folder-badge" id="badge-all">${totalImages}</span>
+    </div>
+  `;
+
+  // Add folder items
+  folderStats.forEach(folder => {
+    const folderItem = document.createElement('div');
+    folderItem.className = `folder-item ${selectedNavFolder === folder.name ? 'folder-item-active' : ''}`;
+    folderItem.dataset.folder = folder.name;
+    folderItem.innerHTML = `
+      <span class="folder-name">${folder.name}</span>
+      <span class="folder-badge" id="badge-${folder.name}">${folder.image_count}</span>
+    `;
+    folderItem.addEventListener('click', () => handleFolderNavClick(folder.name));
+    folderList.appendChild(folderItem);
+  });
+
+  // Add click handler for "All Images"
+  const allImagesItem = folderList.querySelector('[data-folder="all"]');
+  allImagesItem?.addEventListener('click', () => handleFolderNavClick('all'));
+}
+
+// Handle folder navigation click
+async function handleFolderNavClick(folderName: string) {
+  selectedNavFolder = folderName;
+
+  // Update active states
+  document.querySelectorAll('.folder-item').forEach(item => {
+    item.classList.remove('folder-item-active');
+  });
+  document.querySelector(`[data-folder="${folderName}"]`)?.classList.add('folder-item-active');
+
+  // Update gallery title
+  if (galleryTitle) {
+    galleryTitle.textContent = folderName === 'all' ? 'Image Gallery' : `Image Gallery - ${folderName}`;
+  }
+
+  // Load images for the selected folder
+  await loadImages(folderName === 'all' ? undefined : folderName);
+}
+
+// Duplicate detection modal functions (simplified - full implementation would integrate with handleFiles)
+function hideDuplicateModal() {
+  if (duplicateModal) {
+    duplicateModal.style.display = 'none';
+  }
+}
+
+function proceedWithUpload() {
+  hideDuplicateModal();
 }
 
 // Initialize on page load

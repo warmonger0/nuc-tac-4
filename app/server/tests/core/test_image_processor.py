@@ -18,6 +18,8 @@ from core.image_processor import (
     get_folders,
     rename_folder,
     delete_folder,
+    check_for_duplicates,
+    get_folder_statistics,
     IMAGES_DIR
 )
 from core.data_models import ImageMetadata
@@ -360,3 +362,283 @@ class TestFileOperations:
             assert Path(file_path).exists()
         finally:
             core.image_processor.IMAGES_DIR = original_images_dir
+
+
+class TestDuplicateDetection:
+    """Test duplicate detection functionality"""
+
+    @pytest.fixture
+    def sample_image_data(self):
+        """Load real sample PNG for testing"""
+        test_image_path = Path(__file__).parent.parent / "test_images" / "sample.png"
+        with open(test_image_path, 'rb') as f:
+            return f.read()
+
+    @pytest.fixture
+    def different_image_data(self):
+        """Load different sample image for testing"""
+        test_image_path = Path(__file__).parent.parent / "test_images" / "sample.jpg"
+        with open(test_image_path, 'rb') as f:
+            return f.read()
+
+    def test_check_duplicates_empty_folder(self, test_db, sample_image_data):
+        """Test duplicate check on empty folder returns no duplicates"""
+        create_folder(test_db, "test-folder")
+
+        duplicates = check_for_duplicates(
+            test_db,
+            sample_image_data,
+            "test-folder",
+            "test.png"
+        )
+
+        assert len(duplicates) == 0
+
+    def test_check_duplicates_exact_filename_match(self, test_db, sample_image_data):
+        """Test duplicate check detects exact filename match"""
+        create_folder(test_db, "test-folder")
+
+        # Create first image
+        metadata1 = ImageMetadata(
+            image_id="img1",
+            filename="test.png",
+            folder="test-folder",
+            size=1000,
+            format="png",
+            created_at=datetime.now(),
+            file_path="/path/test.png"
+        )
+        save_image_metadata(test_db, metadata1)
+
+        # Check for duplicates with same filename
+        duplicates = check_for_duplicates(
+            test_db,
+            sample_image_data,
+            "test-folder",
+            "test.png"
+        )
+
+        assert len(duplicates) >= 1
+        assert any(d['filename'] == 'test.png' for d in duplicates)
+        assert any(d['match_type'] == 'exact_filename' for d in duplicates)
+
+    def test_check_duplicates_similar_content(self, test_db, sample_image_data):
+        """Test duplicate check detects similar image content"""
+        from core import image_hasher
+
+        create_folder(test_db, "test-folder")
+
+        # Compute hash for the sample image
+        phash = image_hasher.compute_phash(sample_image_data)
+
+        # Create first image with the hash
+        metadata1 = ImageMetadata(
+            image_id="img1",
+            filename="original.png",
+            folder="test-folder",
+            size=1000,
+            format="png",
+            created_at=datetime.now(),
+            file_path="/path/original.png"
+        )
+        save_image_metadata(test_db, metadata1, phash)
+
+        # Check for duplicates with different filename but same content
+        duplicates = check_for_duplicates(
+            test_db,
+            sample_image_data,
+            "test-folder",
+            "duplicate.png"
+        )
+
+        assert len(duplicates) >= 1
+        assert any(d['filename'] == 'original.png' for d in duplicates)
+        assert any(d['similarity'] >= 0.95 for d in duplicates)
+
+    def test_check_duplicates_different_folder(self, test_db, sample_image_data):
+        """Test duplicate check is folder-specific"""
+        from core import image_hasher
+
+        create_folder(test_db, "folder1")
+        create_folder(test_db, "folder2")
+
+        # Compute hash
+        phash = image_hasher.compute_phash(sample_image_data)
+
+        # Create image in folder1
+        metadata1 = ImageMetadata(
+            image_id="img1",
+            filename="test.png",
+            folder="folder1",
+            size=1000,
+            format="png",
+            created_at=datetime.now(),
+            file_path="/path/test.png"
+        )
+        save_image_metadata(test_db, metadata1, phash)
+
+        # Check for duplicates in folder2 (different folder)
+        duplicates = check_for_duplicates(
+            test_db,
+            sample_image_data,
+            "folder2",
+            "test.png"
+        )
+
+        assert len(duplicates) == 0
+
+    def test_check_duplicates_different_images(self, test_db, sample_image_data, different_image_data):
+        """Test duplicate check with different images"""
+        from core import image_hasher
+
+        create_folder(test_db, "test-folder")
+
+        # Compute hash for different image
+        phash = image_hasher.compute_phash(different_image_data)
+
+        # Create image with different content
+        metadata1 = ImageMetadata(
+            image_id="img1",
+            filename="different.jpg",
+            folder="test-folder",
+            size=1000,
+            format="jpg",
+            created_at=datetime.now(),
+            file_path="/path/different.jpg"
+        )
+        save_image_metadata(test_db, metadata1, phash)
+
+        # Check for duplicates with sample image (different content)
+        duplicates = check_for_duplicates(
+            test_db,
+            sample_image_data,
+            "test-folder",
+            "test.png"
+        )
+
+        # Should not find duplicates (similarity below threshold)
+        assert all(d['similarity'] < 0.95 or d['match_type'] == 'exact_filename' for d in duplicates)
+
+    def test_check_duplicates_custom_threshold(self, test_db, sample_image_data):
+        """Test duplicate check with custom similarity threshold"""
+        from core import image_hasher
+
+        create_folder(test_db, "test-folder")
+
+        # Compute hash
+        phash = image_hasher.compute_phash(sample_image_data)
+
+        # Create image
+        metadata1 = ImageMetadata(
+            image_id="img1",
+            filename="test.png",
+            folder="test-folder",
+            size=1000,
+            format="png",
+            created_at=datetime.now(),
+            file_path="/path/test.png"
+        )
+        save_image_metadata(test_db, metadata1, phash)
+
+        # Check with very high threshold (only exact matches)
+        duplicates = check_for_duplicates(
+            test_db,
+            sample_image_data,
+            "test-folder",
+            "different.png",
+            threshold=0.99
+        )
+
+        assert len(duplicates) >= 1
+        assert duplicates[0]['similarity'] >= 0.99
+
+
+class TestFolderStatistics:
+    """Test folder statistics functionality"""
+
+    def test_get_folder_statistics_empty(self, test_db):
+        """Test getting statistics for folder with no images"""
+        stats = get_folder_statistics(test_db)
+
+        # Should have default folder at minimum
+        assert len(stats) >= 1
+        default_folder = next((s for s in stats if s['name'] == 'default'), None)
+        assert default_folder is not None
+        assert default_folder['image_count'] == 0
+        assert default_folder['total_size'] == 0
+
+    def test_get_folder_statistics_with_images(self, test_db):
+        """Test getting statistics for folder with images"""
+        # Create test images
+        metadata1 = ImageMetadata(
+            image_id="img1",
+            filename="test1.png",
+            folder="default",
+            size=1000,
+            format="png",
+            created_at=datetime.now(),
+            file_path="/path/test1.png"
+        )
+        metadata2 = ImageMetadata(
+            image_id="img2",
+            filename="test2.png",
+            folder="default",
+            size=2000,
+            format="png",
+            created_at=datetime.now(),
+            file_path="/path/test2.png"
+        )
+
+        save_image_metadata(test_db, metadata1)
+        save_image_metadata(test_db, metadata2)
+
+        stats = get_folder_statistics(test_db)
+
+        default_folder = next((s for s in stats if s['name'] == 'default'), None)
+        assert default_folder is not None
+        assert default_folder['image_count'] == 2
+        assert default_folder['total_size'] == 3000
+
+    def test_get_folder_statistics_multiple_folders(self, test_db):
+        """Test getting statistics for multiple folders"""
+        create_folder(test_db, "folder1")
+        create_folder(test_db, "folder2")
+
+        # Add images to different folders
+        metadata1 = ImageMetadata(
+            image_id="img1",
+            filename="test1.png",
+            folder="folder1",
+            size=1000,
+            format="png",
+            created_at=datetime.now(),
+            file_path="/path/test1.png"
+        )
+        metadata2 = ImageMetadata(
+            image_id="img2",
+            filename="test2.png",
+            folder="folder2",
+            size=2000,
+            format="png",
+            created_at=datetime.now(),
+            file_path="/path/test2.png"
+        )
+
+        save_image_metadata(test_db, metadata1)
+        save_image_metadata(test_db, metadata2)
+
+        stats = get_folder_statistics(test_db)
+
+        # Should have at least 3 folders (default, folder1, folder2)
+        assert len(stats) >= 3
+
+        folder1_stats = next((s for s in stats if s['name'] == 'folder1'), None)
+        folder2_stats = next((s for s in stats if s['name'] == 'folder2'), None)
+
+        assert folder1_stats is not None
+        assert folder1_stats['image_count'] == 1
+        assert folder1_stats['total_size'] == 1000
+
+        assert folder2_stats is not None
+        assert folder2_stats['image_count'] == 1
+        assert folder2_stats['total_size'] == 2000

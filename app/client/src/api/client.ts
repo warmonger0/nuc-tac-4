@@ -107,9 +107,20 @@ export const api = {
     });
   },
 
+  // Duplicate check method
+  async checkDuplicate(file: File, folder: string = 'default'): Promise<DuplicateCheckResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    return apiRequest<DuplicateCheckResponse>(`/images/check-duplicate?folder=${encodeURIComponent(folder)}`, {
+      method: 'POST',
+      body: formData
+    });
+  },
+
   // Folder management methods
-  async getFolders(): Promise<FolderResponse> {
-    return apiRequest<FolderResponse>('/folders');
+  async getFolders(): Promise<FolderListResponse> {
+    return apiRequest<FolderListResponse>('/folders');
   },
 
   async createFolder(folderName: string): Promise<FolderOperationResponse> {

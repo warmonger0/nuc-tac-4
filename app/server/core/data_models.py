@@ -124,3 +124,33 @@ class FolderOperationResponse(BaseModel):
     success: bool
     message: str
     error: Optional[str] = None
+
+# Duplicate Detection Models
+class DuplicateMatch(BaseModel):
+    image_id: str
+    filename: str
+    folder: str
+    similarity: float  # 0.0 to 1.0
+    phash: Optional[str] = None
+    match_type: Literal["exact_filename", "similar_content"]
+
+class DuplicateCheckRequest(BaseModel):
+    folder: str = "default"
+    filename: str
+
+class DuplicateCheckResponse(BaseModel):
+    is_duplicate: bool
+    matches: List[DuplicateMatch]
+    error: Optional[str] = None
+
+# Folder Statistics Models
+class FolderStats(BaseModel):
+    name: str
+    image_count: int
+    total_size: int  # in bytes
+    created_at: str
+
+class FolderListResponse(BaseModel):
+    folders: List[FolderStats]
+    total_folders: int
+    error: Optional[str] = None
