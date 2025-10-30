@@ -39,7 +39,11 @@ from core.data_models import (
     FolderRequest,
     FolderRenameRequest,
     FolderResponse,
-    FolderOperationResponse
+    FolderOperationResponse,
+    DuplicateCheckResponse,
+    DuplicateMatch,
+    FolderListResponse,
+    FolderStats
 )
 
 # Import core modules (to be implemented)
@@ -65,8 +69,11 @@ from core.image_processor import (
     get_folders,
     rename_folder,
     delete_folder,
-    sanitize_folder_name
+    sanitize_folder_name,
+    check_for_duplicates,
+    get_folder_statistics
 )
+from core import image_hasher
 from core.data_models import ImageMetadata
 import uuid
 from pathlib import Path
@@ -365,9 +372,16 @@ async def upload_images(
                 file_path=file_path
             )
 
-            # Save metadata to database
+            # Compute perceptual hash
+            phash = None
+            try:
+                phash = image_hasher.compute_phash(file_data)
+            except Exception as e:
+                logger.warning(f"[WARNING] Failed to compute hash for {file.filename}: {str(e)}")
+
+            # Save metadata to database with hash
             conn = sqlite3.connect("db/database.db")
-            save_image_metadata(conn, metadata)
+            save_image_metadata(conn, metadata, phash)
             conn.close()
 
             # Create response
@@ -468,26 +482,97 @@ async def delete_image_endpoint(image_id: str):
         logger.error(f"[ERROR] Full traceback:\n{traceback.format_exc()}")
         raise HTTPException(500, f"Error deleting image: {str(e)}")
 
+@app.post("/api/images/check-duplicate", response_model=DuplicateCheckResponse)
+async def check_duplicate(
+    file: UploadFile = File(...),
+    folder: str = "default"
+) -> DuplicateCheckResponse:
+    """Check if an image is a duplicate before uploading"""
+    try:
+        # Validate image format
+        if not validate_image_format(file.filename):
+            return DuplicateCheckResponse(
+                is_duplicate=False,
+                matches=[],
+                error=f"Unsupported file format. Supported formats: PNG, JPG, JPEG, GIF, WebP, BMP"
+            )
+
+        # Read file data
+        file_data = await file.read()
+
+        # Sanitize folder name
+        folder_sanitized = sanitize_folder_name(folder)
+
+        # Check for duplicates
+        conn = sqlite3.connect("db/database.db")
+        duplicates = check_for_duplicates(conn, file_data, folder_sanitized, file.filename)
+        conn.close()
+
+        # Convert to response format
+        matches = [
+            DuplicateMatch(
+                image_id=d['image_id'],
+                filename=d['filename'],
+                folder=d['folder'],
+                similarity=d['similarity'],
+                phash=d.get('phash'),
+                match_type=d['match_type']
+            )
+            for d in duplicates
+        ]
+
+        response = DuplicateCheckResponse(
+            is_duplicate=len(matches) > 0,
+            matches=matches
+        )
+
+        logger.info(f"[SUCCESS] Duplicate check for {file.filename}: {len(matches)} matches found")
+        return response
+
+    except Exception as e:
+        logger.error(f"[ERROR] Duplicate check failed for {file.filename}: {str(e)}")
+        logger.error(f"[ERROR] Full traceback:\n{traceback.format_exc()}")
+        return DuplicateCheckResponse(
+            is_duplicate=False,
+            matches=[],
+            error=str(e)
+        )
+
 # ============================================
 # Folder Management Endpoints
 # ============================================
 
-@app.get("/api/folders", response_model=FolderResponse)
-async def list_folders() -> FolderResponse:
-    """Get list of all folders"""
+@app.get("/api/folders", response_model=FolderListResponse)
+async def list_folders() -> FolderListResponse:
+    """Get list of all folders with statistics"""
     try:
         conn = sqlite3.connect("db/database.db")
-        folders = get_folders(conn)
+        folder_stats = get_folder_statistics(conn)
         conn.close()
 
-        response = FolderResponse(folders=folders)
+        # Convert to response format
+        folders = [
+            FolderStats(
+                name=stat['name'],
+                image_count=stat['image_count'],
+                total_size=stat['total_size'],
+                created_at=stat['created_at']
+            )
+            for stat in folder_stats
+        ]
+
+        response = FolderListResponse(
+            folders=folders,
+            total_folders=len(folders)
+        )
         logger.info(f"[SUCCESS] Folders retrieved: {len(folders)} folders")
         return response
     except Exception as e:
         logger.error(f"[ERROR] Failed to retrieve folders: {str(e)}")
         logger.error(f"[ERROR] Full traceback:\n{traceback.format_exc()}")
-        return FolderResponse(
+        return FolderListResponse(
             folders=[],
+            total_folders=0,
             error=str(e)
         )
 

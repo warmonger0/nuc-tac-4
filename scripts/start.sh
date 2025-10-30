@@ -58,7 +58,7 @@ fi
 # Start frontend
 echo -e "${GREEN}Starting frontend server...${NC}"
 cd "$PROJECT_ROOT/app/client"
-npm run dev &
+npm run dev -- --host 0.0.0.0 &
 FRONTEND_PID=$!
 
 # Wait for frontend to start
@@ -72,6 +72,7 @@ fi
 
 echo -e "${GREEN}✓ Services started successfully!${NC}"
 echo -e "${BLUE}Frontend: http://localhost:5173${NC}"
+echo -e "${BLUE}Frontend (network): http://192.168.50.142:5173${NC}"
 echo -e "${BLUE}Backend:  http://localhost:8000${NC}"
 echo -e "${BLUE}API Docs: http://localhost:8000/docs${NC}"
 echo ""

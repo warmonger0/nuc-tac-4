@@ -49,13 +49,63 @@
           </div>
         </section>
 
-        <!-- Image Gallery Section -->
+        <!-- Image Gallery Section with Folder Navigation -->
         <section class="tables-section">
-          <h3>Image Gallery</h3>
-          <div id="image-gallery" class="image-gallery">
-            <p class="no-tables">No images uploaded yet. Upload images to get started.</p>
+          <h3 id="gallery-title">Image Gallery</h3>
+          <div class="gallery-container">
+            <!-- Folder Navigation Sidebar -->
+            <aside class="folder-navigation" id="folder-navigation">
+              <div class="folder-nav-header">
+                <h4>Folders</h4>
+              </div>
+              <div class="folder-list" id="folder-list">
+                <div class="folder-item folder-item-active" data-folder="all">
+                  <span class="folder-name">All Images</span>
+                  <span class="folder-badge" id="badge-all">0</span>
+                </div>
+              </div>
+            </aside>
+
+            <!-- Image Gallery -->
+            <div class="gallery-content">
+              <div id="image-gallery" class="image-gallery">
+                <p class="no-tables">No images uploaded yet. Upload images to get started.</p>
+              </div>
+            </div>
           </div>
         </section>
+
+        <!-- Duplicate Warning Dialog -->
+        <div id="duplicate-modal" class="modal" style="display: none;">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h2>Duplicate Image Detected</h2>
+              <button class="close-modal" id="close-duplicate-modal">&times;</button>
+            </div>
+            <div class="modal-body">
+              <p id="duplicate-message" class="duplicate-message"></p>
+
+              <div class="duplicate-comparison">
+                <div class="duplicate-image-container">
+                  <h4>Existing Image</h4>
+                  <img id="existing-image" class="duplicate-preview" alt="Existing image">
+                  <p id="existing-filename" class="duplicate-filename"></p>
+                  <p id="similarity-score" class="similarity-score"></p>
+                </div>
+                <div class="duplicate-image-container">
+                  <h4>New Image</h4>
+                  <img id="new-image" class="duplicate-preview" alt="New image to upload">
+                  <p id="new-filename" class="duplicate-filename"></p>
+                </div>
+              </div>
+
+              <div class="duplicate-actions">
+                <button id="skip-duplicate-button" class="secondary-button">Skip</button>
+                <button id="upload-anyway-button" class="primary-button">Upload Anyway</button>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <!-- Folder Modals -->
         <div id="folder-modal" class="modal" style="display: none;">

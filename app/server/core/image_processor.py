@@ -3,9 +3,10 @@ import os
 import shutil
 from pathlib import Path
 from datetime import datetime
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 import uuid
 from core.data_models import ImageMetadata
+from core import image_hasher
 
 # Supported image formats
 SUPPORTED_FORMATS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp']
@@ -68,7 +69,8 @@ def initialize_image_database(conn: sqlite3.Connection) -> None:
             size INTEGER NOT NULL,
             format TEXT NOT NULL,
             created_at TEXT NOT NULL,
-            file_path TEXT NOT NULL
+            file_path TEXT NOT NULL,
+            phash TEXT
         )
     """)
 
@@ -83,6 +85,11 @@ def initialize_image_database(conn: sqlite3.Connection) -> None:
         ON images(created_at)
     """)
 
+    cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_images_phash
+        ON images(phash)
+    """)
+
     # Create folders table
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS folders (
@@ -93,6 +100,14 @@ def initialize_image_database(conn: sqlite3.Connection) -> None:
     """)
 
     conn.commit()
+
+    # Migration: Add phash column to existing tables
+    try:
+        cursor.execute("ALTER TABLE images ADD COLUMN phash TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        # Column already exists
+        pass
 
     # Ensure default folder exists
     try:
@@ -143,18 +158,19 @@ def save_image_to_disk(file_data: bytes, folder: str, filename: str) -> str:
         raise IOError(f"Failed to save image: {str(e)}")
 
 
-def save_image_metadata(conn: sqlite3.Connection, metadata: ImageMetadata) -> None:
+def save_image_metadata(conn: sqlite3.Connection, metadata: ImageMetadata, phash: Optional[str] = None) -> None:
     """
     Saves image metadata to database.
 
     Args:
         conn: SQLite database connection
         metadata: ImageMetadata object with image information
+        phash: Optional perceptual hash of the image
     """
     cursor = conn.cursor()
     cursor.execute("""
-        INSERT INTO images (id, filename, folder, size, format, created_at, file_path)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO images (id, filename, folder, size, format, created_at, file_path, phash)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     """, (
         metadata.image_id,
         metadata.filename,
@@ -162,7 +178,8 @@ def save_image_metadata(conn: sqlite3.Connection, metadata: ImageMetadata) -> No
         metadata.size,
         metadata.format,
         metadata.created_at.isoformat(),
-        metadata.file_path
+        metadata.file_path,
+        phash
     ))
     conn.commit()
 
@@ -436,3 +453,122 @@ def delete_folder(conn: sqlite3.Connection, folder_name: str) -> Tuple[bool, str
     except Exception as e:
         conn.rollback()
         return False, f"Failed to delete folder: {str(e)}"
+
+
+def check_for_duplicates(
+    conn: sqlite3.Connection,
+    file_data: bytes,
+    folder: str,
+    filename: str,
+    threshold: float = 0.95
+) -> List[Dict[str, Any]]:
+    """
+    Check for duplicate images in a folder based on filename and perceptual hash.
+
+    Args:
+        conn: SQLite database connection
+        file_data: Binary image data to check
+        folder: Folder name to check within
+        filename: Filename to check for exact matches
+        threshold: Similarity threshold (0.0-1.0), default 0.95
+
+    Returns:
+        List of duplicate matches, each containing:
+        - image_id: ID of the duplicate image
+        - filename: Filename of the duplicate
+        - folder: Folder name
+        - similarity: Similarity score (0.0-1.0)
+        - phash: Perceptual hash of the duplicate
+        - match_type: 'exact_filename' or 'similar_content'
+
+    Raises:
+        ValueError: If unable to compute hash or invalid threshold
+    """
+    folder = sanitize_folder_name(folder)
+    duplicates = []
+
+    # Check for exact filename match
+    cursor = conn.cursor()
+    cursor.execute(
+        "SELECT id, filename, phash FROM images WHERE folder = ? AND filename = ?",
+        (folder, filename)
+    )
+    filename_match = cursor.fetchone()
+    if filename_match:
+        duplicates.append({
+            'image_id': filename_match[0],
+            'filename': filename_match[1],
+            'folder': folder,
+            'similarity': 1.0,
+            'phash': filename_match[2],
+            'match_type': 'exact_filename'
+        })
+
+    # Compute perceptual hash of the uploaded image
+    try:
+        phash = image_hasher.compute_phash(file_data)
+    except ValueError as e:
+        raise ValueError(f"Failed to compute hash for duplicate check: {str(e)}")
+
+    # Find similar images by perceptual hash
+    similar_images = image_hasher.find_similar_images(conn, phash, folder, threshold)
+
+    # Add similar images to duplicates list (excluding exact filename matches)
+    for image_id, img_filename, img_hash, similarity in similar_images:
+        # Skip if already added as filename match
+        if any(d['image_id'] == image_id for d in duplicates):
+            continue
+
+        duplicates.append({
+            'image_id': image_id,
+            'filename': img_filename,
+            'folder': folder,
+            'similarity': similarity,
+            'phash': img_hash,
+            'match_type': 'similar_content'
+        })
+
+    # Sort by similarity (highest first)
+    duplicates.sort(key=lambda x: x['similarity'], reverse=True)
+
+    return duplicates
+
+
+def get_folder_statistics(conn: sqlite3.Connection) -> List[Dict[str, Any]]:
+    """
+    Get statistics for all folders including image count and total size.
+
+    Args:
+        conn: SQLite database connection
+
+    Returns:
+        List of folder statistics, each containing:
+        - name: Folder name
+        - image_count: Number of images in the folder
+        - total_size: Total size of images in bytes
+        - created_at: Folder creation timestamp
+    """
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT
+            f.name,
+            f.created_at,
+            COUNT(i.id) as image_count,
+            COALESCE(SUM(i.size), 0) as total_size
+        FROM folders f
+        LEFT JOIN images i ON f.name = i.folder
+        GROUP BY f.name, f.created_at
+        ORDER BY f.name
+    """)
+
+    stats = []
+    for row in cursor.fetchall():
+        stats.append({
+            'name': row[0],
+            'created_at': row[1],
+            'image_count': row[2],
+            'total_size': row[3]
+        })
+
+    return stats
